@@ -1,0 +1,221 @@
+openapi: 3.0.3
+info:
+  title: NexPay Payment Service API
+  description: |
+    Process P2P transfers with Saga pattern, idempotency keys, and full payment lifecycle 
+    management including refunds. Integrates with SQS for event-driven notifications 
+    and DynamoDB for high-performance history queries.
+  version: 1.0.0
+  contact:
+    name: Hector
+    url: https://github.com/hectormr
+
+servers:
+  - url: http://localhost:8080
+    description: API Gateway (development)
+  - url: http://localhost:8082
+    description: Direct payment-service
+
+tags:
+  - name: Payments
+    description: Payment processing and lifecycle
+  - name: History
+    description: Payment history (DynamoDB)
+
+paths:
+  /api/v1/payments:
+    post:
+      tags: [Payments]
+      summary: Execute a P2P transfer
+      description: |
+        Creates a payment using the **Saga Pattern** (Choreography):
+        1. Debit source wallet
+        2. Credit target wallet
+        3. Mark payment as COMPLETED
+        4. Publish event to SQS
+        
+        Use `X-Idempotency-Key` header to prevent duplicate charges.
+      operationId: createPayment
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: true
+          description: Unique key to ensure idempotent payment processing
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: Payment processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: |
+            Invalid request. Possible reasons:
+            - Negative or zero amount
+            - Source and target wallet are the same
+            - Insufficient funds in source wallet
+        '409':
+          description: Duplicate idempotency key (returns original payment)
+
+  /api/v1/payments/{paymentId}:
+    get:
+      tags: [Payments]
+      summary: Get payment details by ID
+      operationId: getPayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Payment found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '404':
+          description: Payment not found
+
+  /api/v1/payments/{paymentId}/refund:
+    post:
+      tags: [Payments]
+      summary: Refund a completed payment
+      description: |
+        Reverses a completed payment using a **compensation saga**:
+        1. Credit source wallet (return funds)
+        2. Debit target wallet (remove funds)
+        3. Mark payment as REFUNDED
+        4. Publish PAYMENT_REFUNDED event
+      operationId: refundPayment
+      parameters:
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200':
+          description: Refund processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: Payment cannot be refunded (not in COMPLETED state)
+        '404':
+          description: Payment not found
+
+  /api/v1/payments/history:
+    get:
+      tags: [History]
+      summary: Get payment history (DynamoDB)
+      description: |
+        Queries payment history from DynamoDB for high-performance reads.
+        Uses **CQRS pattern** - writes go to PostgreSQL, reads from DynamoDB.
+      operationId: getPaymentHistory
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: Payment history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PaymentResponse'
+
+components:
+  parameters:
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CreatePaymentRequest:
+      type: object
+      required: [sourceWalletId, targetWalletId, amount]
+      properties:
+        sourceWalletId:
+          type: string
+          format: uuid
+          description: Wallet to debit (sender)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        targetWalletId:
+          type: string
+          format: uuid
+          description: Wallet to credit (receiver)
+          example: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          description: Amount to transfer (must be positive)
+          example: 250.00
+        description:
+          type: string
+          description: Optional payment description
+          example: "Rent payment October 2026"
+
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sourceWalletId:
+          type: string
+          format: uuid
+        targetWalletId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: decimal
+        description:
+          type: string
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED, REFUNDED]
+          description: |
+            Payment lifecycle states:
+            - `PENDING` → Just created, saga in progress
+            - `COMPLETED` → Both debit and credit succeeded
+            - `FAILED` → Saga failed, compensation executed
+            - `REFUNDED` → Previously completed, now reversed
+        idempotencyKey:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time

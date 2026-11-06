@@ -1,0 +1,247 @@
+openapi: 3.0.3
+info:
+  title: NexPay Wallet Service API
+  description: |
+    Manage digital wallets - create accounts, check balances, credit/debit funds, 
+    and query movement history with pagination.
+  version: 1.0.0
+  contact:
+    name: Hector
+    url: https://github.com/hectormr
+
+servers:
+  - url: http://localhost:8080
+    description: API Gateway (development)
+  - url: http://localhost:8081
+    description: Direct wallet-service
+
+tags:
+  - name: Wallets
+    description: Wallet CRUD operations
+  - name: Movements
+    description: Transaction history
+
+paths:
+  /api/v1/wallets:
+    post:
+      tags: [Wallets]
+      summary: Create a new wallet
+      operationId: createWallet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWalletRequest'
+      responses:
+        '201':
+          description: Wallet created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '400':
+          description: Invalid request
+        '409':
+          description: Email already registered
+
+  /api/v1/wallets/{walletId}:
+    get:
+      tags: [Wallets]
+      summary: Get wallet by ID
+      operationId: getWallet
+      parameters:
+        - $ref: '#/components/parameters/WalletId'
+      responses:
+        '200':
+          description: Wallet found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '404':
+          description: Wallet not found
+
+  /api/v1/wallets/{walletId}/credit:
+    post:
+      tags: [Wallets]
+      summary: Credit funds to wallet
+      operationId: creditWallet
+      parameters:
+        - $ref: '#/components/parameters/WalletId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditDebitRequest'
+      responses:
+        '200':
+          description: Credit successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '404':
+          description: Wallet not found
+
+  /api/v1/wallets/{walletId}/debit:
+    post:
+      tags: [Wallets]
+      summary: Debit funds from wallet
+      operationId: debitWallet
+      parameters:
+        - $ref: '#/components/parameters/WalletId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditDebitRequest'
+      responses:
+        '200':
+          description: Debit successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+        '400':
+          description: Insufficient funds
+        '404':
+          description: Wallet not found
+
+  /api/v1/wallets/{walletId}/status:
+    patch:
+      tags: [Wallets]
+      summary: Update wallet status (activate/deactivate)
+      operationId: updateWalletStatus
+      parameters:
+        - $ref: '#/components/parameters/WalletId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [ACTIVE, INACTIVE]
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletResponse'
+
+  /api/v1/wallets/{walletId}/movements:
+    get:
+      tags: [Movements]
+      summary: Get movement history with pagination
+      operationId: getMovements
+      parameters:
+        - $ref: '#/components/parameters/WalletId'
+        - name: page
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: size
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          description: Paginated movement list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageMovementResponse'
+
+components:
+  parameters:
+    WalletId:
+      name: walletId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    CreateWalletRequest:
+      type: object
+      required: [ownerName, email]
+      properties:
+        ownerName:
+          type: string
+          example: "Alice Johnson"
+        email:
+          type: string
+          format: email
+          example: "alice@nexpay.com"
+
+    CreditDebitRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+          example: 500.00
+        description:
+          type: string
+          example: "Monthly deposit"
+
+    WalletResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        ownerName:
+          type: string
+        email:
+          type: string
+        balance:
+          type: number
+          format: decimal
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        createdAt:
+          type: string
+          format: date-time
+
+    MovementResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [CREDIT, DEBIT]
+        amount:
+          type: number
+          format: decimal
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PageMovementResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/MovementResponse'
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+        number:
+          type: integer
+        size:
+          type: integer

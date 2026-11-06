@@ -1,0 +1,300 @@
+{
+  "info": {
+    "name": "NexPay API — Demo Collection",
+    "description": "Complete flow to demo NexPay: Create wallets → Fund → Transfer → Check history → Refund",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "walletServiceUrl", "value": "http://localhost:8081" },
+    { "key": "paymentServiceUrl", "value": "http://localhost:8082" }
+  ],
+  "item": [
+    {
+      "name": "1. Setup",
+      "item": [
+        {
+          "name": "1.1 Create Source Wallet (Alice)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerName\": \"Alice Johnson\",\n  \"email\": \"alice@nexpay.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/wallets", "host": ["{{baseUrl}}"], "path": ["api", "v1", "wallets"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "var jsonData = pm.response.json();",
+                "pm.collectionVariables.set('sourceWalletId', jsonData.id);",
+                "pm.test('Wallet created', () => pm.response.to.have.status(201));",
+                "pm.test('Status is ACTIVE', () => pm.expect(jsonData.status).to.eql('ACTIVE'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "1.2 Create Target Wallet (Bob)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerName\": \"Bob Smith\",\n  \"email\": \"bob@nexpay.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/wallets", "host": ["{{baseUrl}}"], "path": ["api", "v1", "wallets"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "var jsonData = pm.response.json();",
+                "pm.collectionVariables.set('targetWalletId', jsonData.id);",
+                "pm.test('Wallet created', () => pm.response.to.have.status(201));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "1.3 Fund Alice's Wallet ($1000)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 1000.00,\n  \"description\": \"Initial funding\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallets/{{sourceWalletId}}/credit",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallets", "{{sourceWalletId}}", "credit"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Balance is $1000', () => {",
+                "  pm.expect(pm.response.json().balance).to.eql(1000.00);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "2. Payment Flow (Saga)",
+      "item": [
+        {
+          "name": "2.1 Transfer $250 (Alice → Bob)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{sourceWalletId}}\",\n  \"targetWalletId\": \"{{targetWalletId}}\",\n  \"amount\": 250.00,\n  \"description\": \"Rent payment October\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/payments", "host": ["{{baseUrl}}"], "path": ["api", "v1", "payments"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "var jsonData = pm.response.json();",
+                "pm.collectionVariables.set('paymentId', jsonData.id);",
+                "pm.test('Payment created', () => pm.response.to.have.status(201));",
+                "pm.test('Status is COMPLETED', () => pm.expect(jsonData.status).to.eql('COMPLETED'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.2 Get Payment Details",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{paymentId}}"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Payment found', () => pm.response.to.have.status(200));",
+                "pm.test('Amount is $250', () => pm.expect(pm.response.json().amount).to.eql(250.00));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.3 Verify Alice's Balance ($750)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallets/{{sourceWalletId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallets", "{{sourceWalletId}}"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Alice balance is $750', () => {",
+                "  pm.expect(pm.response.json().balance).to.eql(750.00);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "2.4 Verify Bob's Balance ($250)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallets/{{targetWalletId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallets", "{{targetWalletId}}"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Bob balance is $250', () => {",
+                "  pm.expect(pm.response.json().balance).to.eql(250.00);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "3. Refund",
+      "item": [
+        {
+          "name": "3.1 Refund Payment",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payments/{{paymentId}}/refund",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payments", "{{paymentId}}", "refund"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Refund successful', () => pm.response.to.have.status(200));",
+                "pm.test('Status is REFUNDED', () => pm.expect(pm.response.json().status).to.eql('REFUNDED'));"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "3.2 Verify Alice Balance Restored ($1000)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallets/{{sourceWalletId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallets", "{{sourceWalletId}}"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Alice balance restored to $1000', () => {",
+                "  pm.expect(pm.response.json().balance).to.eql(1000.00);",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    },
+    {
+      "name": "4. Edge Cases",
+      "item": [
+        {
+          "name": "4.1 Insufficient Funds",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Idempotency-Key", "value": "{{$guid}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{sourceWalletId}}\",\n  \"targetWalletId\": \"{{targetWalletId}}\",\n  \"amount\": 999999.00,\n  \"description\": \"This should fail\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/v1/payments", "host": ["{{baseUrl}}"], "path": ["api", "v1", "payments"] }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Should reject insufficient funds', () => {",
+                "  pm.response.to.have.status(400);",
+                "});"
+              ]
+            }
+          }]
+        },
+        {
+          "name": "4.2 Wallet Not Found",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallets/00000000-0000-0000-0000-000000000000",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallets", "00000000-0000-0000-0000-000000000000"]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": ["pm.test('Should return 404', () => pm.response.to.have.status(404));"] }
+            }]
+        },
+        {
+          "name": "4.3 Movement History with Pagination",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/wallets/{{sourceWalletId}}/movements?page=0&size=5",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "wallets", "{{sourceWalletId}}", "movements"],
+              "query": [
+                { "key": "page", "value": "0" },
+                { "key": "size", "value": "5" }
+              ]
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": [
+                "pm.test('Should return paginated results', () => {",
+                "  pm.response.to.have.status(200);",
+                "  pm.expect(pm.response.json().content).to.be.an('array');",
+                "});"
+              ]
+            }
+          }]
+        }
+      ]
+    }
+  ]
+}
