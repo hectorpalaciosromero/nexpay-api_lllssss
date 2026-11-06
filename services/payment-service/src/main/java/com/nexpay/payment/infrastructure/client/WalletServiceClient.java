@@ -32,8 +32,8 @@ public class WalletServiceClient {
             RestTemplateBuilder restTemplateBuilder,
             @Value("${wallet-service.url:http://localhost:8081}") String walletServiceUrl) {
         this.restTemplate = restTemplateBuilder
-                .connectTimeout(Duration.ofSeconds(5))
-                .readTimeout(Duration.ofSeconds(10))
+                .setConnectTimeout(Duration.ofSeconds(5))
+                .setReadTimeout(Duration.ofSeconds(10))
                 .build();
         this.walletServiceUrl = walletServiceUrl;
     }
