@@ -318,8 +318,8 @@ src/main/java/com/nexpay/{service}/
 
 ## Author
 
-**Hector** — Java Backend Developer
+**Hector Palacios Romero** — Java Backend Developer
 
 ## License
 
-This project is for educational and portfolio purposes.
+MIT License. See [LICENSE](LICENSE) for details.

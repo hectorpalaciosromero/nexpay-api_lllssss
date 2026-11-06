@@ -36,7 +36,6 @@
         <lombok.version>1.18.40</lombok.version>
         <testcontainers.version>1.19.7</testcontainers.version>
         <jacoco.version>0.8.12</jacoco.version>
-        <flyway.version>10.11.0</flyway.version>
     </properties>
 
     <dependencyManagement>
@@ -91,12 +90,6 @@
                 <scope>import</scope>
             </dependency>
 
-            <!-- Flyway PostgreSQL dialect -->
-            <dependency>
-                <groupId>org.flywaydb</groupId>
-                <artifactId>flyway-database-postgresql</artifactId>
-                <version>${flyway.version}</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
 
